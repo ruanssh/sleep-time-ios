@@ -5,31 +5,41 @@ struct HomeView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \SleepRecord.sleepEnd, order: .reverse) private var records: [SleepRecord]
     @Query(sort: \ActivityTimestamp.date, order: .reverse) private var timestamps: [ActivityTimestamp]
+    @AppStorage("sleepWindowStart") private var sleepWindowStart = 20
+    @AppStorage("sleepWindowEnd") private var sleepWindowEnd = 10
+    @AppStorage("minSleepHours") private var minSleepHours = 4.0
     @State private var showHealthKitAlert = false
     @State private var healthKitMessage = ""
     @State private var showDetectionAlert = false
     @State private var detectionAlertMessage = ""
 
     private var lastNight: SleepRecord? {
-        records.first
+        records.first(where: { $0.sleepEnd > $0.sleepStart })
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    if let record = lastNight {
-                        sleepCard(record)
-                    } else {
-                        noDataCard
-                    }
+            ZStack {
+                LiquidGlassBackground()
 
-                    detectButton
-                    healthKitButton
+                ScrollView {
+                    VStack(spacing: 20) {
+
+
+                        if let record = lastNight {
+                            sleepCard(record)
+                        } else {
+                            noDataCard
+                        }
+
+                        detectButton
+                        healthKitButton
+                    }
+                    .padding()
                 }
-                .padding()
             }
             .navigationTitle("SleepTime")
+            .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 recordActivity()
                 detectSleep(silent: true)
@@ -53,7 +63,7 @@ struct HomeView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(qualityColor(record.quality))
 
-            Text(formattedDuration(record.duration))
+            Text(formattedDuration(record.normalizedDuration))
                 .font(.system(size: 48, weight: .bold, design: .rounded))
 
             Text("de sono")
@@ -86,8 +96,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .liquidGlassCard(cornerRadius: 24)
     }
 
     private var noDataCard: some View {
@@ -115,31 +124,55 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .liquidGlassCard(cornerRadius: 24)
     }
 
     private var detectButton: some View {
-        Button {
+        liquidButton(
+            title: "Detectar Sono",
+            systemImage: "waveform.path.ecg",
+            tint: LiquidGlassTheme.sky
+        ) {
             detectSleep(silent: false)
-        } label: {
-            Label("Detectar Sono", systemImage: "waveform.path.ecg")
-                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
     }
 
     private var healthKitButton: some View {
-        Button {
+        liquidButton(
+            title: "Sincronizar com Saúde",
+            systemImage: "heart.fill",
+            tint: Color(red: 0.94, green: 0.42, blue: 0.67)
+        ) {
             syncHealthKit()
-        } label: {
-            Label("Sincronizar com Saúde", systemImage: "heart.fill")
-                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .tint(.pink)
+    }
+
+    private func liquidButton(
+        title: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.headline)
+
+                Text(title)
+                    .font(.headline)
+
+                Spacer()
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 15)
+            .background {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(tint.opacity(0.35))
+            }
+            .liquidGlassCard(cornerRadius: 18)
+        }
+        .buttonStyle(.plain)
     }
 
     private func recordActivity() {
@@ -150,6 +183,9 @@ struct HomeView: View {
     private func detectSleep(silent: Bool) {
         let last48h = Date.now.addingTimeInterval(-48 * 3600)
         let recentTimestamps = timestamps.filter { $0.date > last48h }
+        let minDuration = max(0, minSleepHours) * 3600
+        let windowStart = normalizedHour(sleepWindowStart)
+        let windowEnd = normalizedHour(sleepWindowEnd)
 
         guard recentTimestamps.count >= 2 else {
             if !silent {
@@ -161,15 +197,19 @@ struct HomeView: View {
 
         let newRecords = SleepDetectionService.detectSleepIncludingNow(
             timestamps: recentTimestamps,
-            existingRecords: records
+            existingRecords: records,
+            minDuration: minDuration,
+            maxDuration: SleepDetectionService.defaultMaxSleepDuration,
+            windowStart: windowStart,
+            windowEnd: windowEnd
         )
         for record in newRecords {
             context.insert(record)
         }
 
         if !silent {
-            if let longest = newRecords.max(by: { $0.duration < $1.duration }) {
-                detectionAlertMessage = "Sono detectado! \(formattedDuration(longest.duration)) de sono registrado."
+            if let longest = newRecords.max(by: { $0.normalizedDuration < $1.normalizedDuration }) {
+                detectionAlertMessage = "Sono detectado! \(formattedDuration(longest.normalizedDuration)) de sono registrado."
             } else {
                 detectionAlertMessage = "Nenhum período de sono encontrado nas últimas 48h."
             }
@@ -206,9 +246,14 @@ struct HomeView: View {
     }
 
     private func formattedDuration(_ interval: TimeInterval) -> String {
-        let hours = Int(interval) / 3600
-        let minutes = (Int(interval) % 3600) / 60
+        let safeInterval = max(0, interval)
+        let hours = Int(safeInterval) / 3600
+        let minutes = (Int(safeInterval) % 3600) / 60
         return "\(hours)h \(minutes)m"
+    }
+
+    private func normalizedHour(_ hour: Int) -> Int {
+        ((hour % 24) + 24) % 24
     }
 
     private var record: SleepRecord? { lastNight }

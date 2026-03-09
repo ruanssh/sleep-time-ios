@@ -7,45 +7,64 @@ struct HistoryView: View {
 
     private var last30Days: [SleepRecord] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
-        return records.filter { $0.sleepEnd > cutoff }
+        return records.filter {
+            $0.sleepEnd > cutoff &&
+            $0.sleepEnd > $0.sleepStart
+        }
     }
 
     var body: some View {
         NavigationStack {
-            List {
-                if !last30Days.isEmpty {
-                    Section("Duração por Dia") {
-                        chartView
-                            .frame(height: 200)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                    }
-                }
+            ZStack {
+                LiquidGlassBackground()
 
-                Section("Registros") {
-                    if last30Days.isEmpty {
-                        ContentUnavailableView(
-                            "Sem registros",
-                            systemImage: "moon.zzz",
-                            description: Text("Os registros de sono aparecerão aqui.")
-                        )
-                    } else {
-                        ForEach(last30Days, id: \.sleepStart) { record in
-                            NavigationLink(destination: SleepDetailView(record: record)) {
-                                recordRow(record)
+                List {
+                    if !last30Days.isEmpty {
+                        Section("Duração por Dia") {
+                            chartView
+                                .frame(height: 200)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 4)
+                                .liquidGlassCard(cornerRadius: 20)
+                                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                        }
+                    }
+
+                    Section("Registros") {
+                        if last30Days.isEmpty {
+                            ContentUnavailableView(
+                                "Sem registros",
+                                systemImage: "moon.zzz",
+                                description: Text("Os registros de sono aparecerão aqui.")
+                            )
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                        } else {
+                            ForEach(last30Days, id: \.persistentModelID) { record in
+                                NavigationLink(destination: SleepDetailView(record: record)) {
+                                    recordRow(record)
+                                }
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
                             }
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .listStyle(.insetGrouped)
             }
             .navigationTitle("Histórico")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
     private var chartView: some View {
-        Chart(last30Days.reversed(), id: \.sleepStart) { record in
+        Chart(last30Days.reversed(), id: \.persistentModelID) { record in
             BarMark(
                 x: .value("Data", record.sleepEnd, unit: .day),
-                y: .value("Horas", record.duration / 3600)
+                y: .value("Horas", record.normalizedDuration / 3600)
             )
             .foregroundStyle(chartColor(for: record.quality))
             .cornerRadius(4)
@@ -53,9 +72,11 @@ struct HistoryView: View {
         .chartYAxis {
             AxisMarks(values: [0, 2, 4, 6, 8, 10]) { value in
                 AxisGridLine()
+                    .foregroundStyle(Color.white.opacity(0.2))
                 AxisValueLabel {
                     if let hours = value.as(Int.self) {
                         Text("\(hours)h")
+                            .foregroundStyle(Color.white.opacity(0.78))
                     }
                 }
             }
@@ -73,17 +94,20 @@ struct HistoryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.sleepEnd.formatted(date: .abbreviated, time: .omitted))
                     .font(.headline)
+                    .foregroundStyle(.white)
                 Text("\(record.sleepStart.formatted(date: .omitted, time: .shortened)) → \(record.sleepEnd.formatted(date: .omitted, time: .shortened))")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.72))
             }
 
             Spacer()
 
-            Text(formattedDuration(record.duration))
+            Text(formattedDuration(record.normalizedDuration))
                 .font(.headline.monospacedDigit())
+                .foregroundStyle(.white)
         }
-        .padding(.vertical, 4)
+        .padding(14)
+        .liquidGlassCard(cornerRadius: 18)
     }
 
     private func chartColor(for quality: SleepQuality) -> Color {
@@ -99,8 +123,9 @@ struct HistoryView: View {
     }
 
     private func formattedDuration(_ interval: TimeInterval) -> String {
-        let hours = Int(interval) / 3600
-        let minutes = (Int(interval) % 3600) / 60
+        let safeInterval = max(0, interval)
+        let hours = Int(safeInterval) / 3600
+        let minutes = (Int(safeInterval) % 3600) / 60
         return "\(hours)h \(minutes)m"
     }
 }

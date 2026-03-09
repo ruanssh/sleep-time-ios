@@ -8,8 +8,12 @@ final class SleepRecord {
     var duration: TimeInterval
     var syncedToHealthKit: Bool
 
+    var normalizedDuration: TimeInterval {
+        max(0, sleepEnd.timeIntervalSince(sleepStart))
+    }
+
     var quality: SleepQuality {
-        let hours = duration / 3600
+        let hours = normalizedDuration / 3600
         if hours < 6 { return .poor }
         if hours < 8 { return .fair }
         return .good
@@ -18,8 +22,12 @@ final class SleepRecord {
     init(sleepStart: Date, sleepEnd: Date) {
         self.sleepStart = sleepStart
         self.sleepEnd = sleepEnd
-        self.duration = sleepEnd.timeIntervalSince(sleepStart)
+        self.duration = max(0, sleepEnd.timeIntervalSince(sleepStart))
         self.syncedToHealthKit = false
+    }
+
+    func refreshDuration() {
+        duration = normalizedDuration
     }
 }
 

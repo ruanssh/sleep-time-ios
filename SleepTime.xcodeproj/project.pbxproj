@@ -18,6 +18,7 @@
 		A10009 /* SleepDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* SleepDetailView.swift */; };
 		A10010 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* SettingsView.swift */; };
 		A10011 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10011 /* Assets.xcassets */; };
+		A10013 /* SessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013 /* SessionsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		B10010 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B10011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B10012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10013 /* SessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsView.swift; sourceTree = "<group>"; };
 		B10020 /* SleepTime.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SleepTime.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -94,6 +96,7 @@
 				B10008 /* HistoryView.swift */,
 				B10009 /* SleepDetailView.swift */,
 				B10010 /* SettingsView.swift */,
+				B10013 /* SessionsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -185,6 +188,7 @@
 				A10008 /* HistoryView.swift in Sources */,
 				A10009 /* SleepDetailView.swift in Sources */,
 				A10010 /* SettingsView.swift in Sources */,
+				A10013 /* SessionsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

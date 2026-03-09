@@ -3,8 +3,12 @@ import SwiftData
 
 struct SleepDetectionService {
     static let defaultMinSleepDuration: TimeInterval = 4 * 3600 // 4 hours
+    static let defaultMaxSleepDuration: TimeInterval = 12 * 3600 // 12 hours
     static let defaultSleepWindowStart = 20 // 8 PM
     static let defaultSleepWindowEnd = 10   // 10 AM
+
+    private static let duplicateTolerance: TimeInterval = 30 * 60
+    private static let futureTimestampGrace: TimeInterval = 5 * 60
 
     /// Analyzes activity timestamps to detect sleep periods.
     /// Returns new SleepRecord instances for any detected sleep that isn't already recorded.
@@ -12,25 +16,40 @@ struct SleepDetectionService {
         timestamps: [ActivityTimestamp],
         existingRecords: [SleepRecord],
         minDuration: TimeInterval = defaultMinSleepDuration,
+        maxDuration: TimeInterval = defaultMaxSleepDuration,
         windowStart: Int = defaultSleepWindowStart,
         windowEnd: Int = defaultSleepWindowEnd
     ) -> [SleepRecord] {
-        guard timestamps.count >= 2 else { return [] }
+        guard minDuration > 0 else { return [] }
+        guard maxDuration >= minDuration else { return [] }
 
-        let sorted = timestamps.sorted { $0.date < $1.date }
+        let normalizedWindowStart = normalizedHour(windowStart)
+        let normalizedWindowEnd = normalizedHour(windowEnd)
+
+        let now = Date.now
+        let validTimestamps = timestamps.filter { $0.date <= now.addingTimeInterval(futureTimestampGrace) }
+        guard validTimestamps.count >= 2 else { return [] }
+
+        let sorted = validTimestamps.sorted { $0.date < $1.date }
         var detected: [SleepRecord] = []
 
         for i in 0..<(sorted.count - 1) {
             let gapStart = sorted[i].date
             let gapEnd = sorted[i + 1].date
+            guard gapEnd > gapStart else { continue }
             let gap = gapEnd.timeIntervalSince(gapStart)
+            guard gap >= minDuration, gap <= maxDuration else { continue }
 
-            guard gap >= minDuration else { continue }
-            guard isInSleepWindow(date: gapStart, windowStart: windowStart, windowEnd: windowEnd) else { continue }
+            guard isInSleepWindow(date: gapStart, windowStart: normalizedWindowStart, windowEnd: normalizedWindowEnd) else { continue }
+            let midpoint = gapStart.addingTimeInterval(gap / 2)
+            guard isInSleepWindow(date: midpoint, windowStart: normalizedWindowStart, windowEnd: normalizedWindowEnd) else { continue }
 
             let alreadyRecorded = existingRecords.contains { existing in
-                abs(existing.sleepStart.timeIntervalSince(gapStart)) < 1800 &&
-                abs(existing.sleepEnd.timeIntervalSince(gapEnd)) < 1800
+                isLikelyDuplicate(
+                    existing: existing,
+                    candidateStart: gapStart,
+                    candidateEnd: gapEnd
+                )
             }
 
             if !alreadyRecorded {
@@ -46,6 +65,7 @@ struct SleepDetectionService {
         timestamps: [ActivityTimestamp],
         existingRecords: [SleepRecord],
         minDuration: TimeInterval = defaultMinSleepDuration,
+        maxDuration: TimeInterval = defaultMaxSleepDuration,
         windowStart: Int = defaultSleepWindowStart,
         windowEnd: Int = defaultSleepWindowEnd
     ) -> [SleepRecord] {
@@ -55,9 +75,35 @@ struct SleepDetectionService {
             timestamps: allTimestamps,
             existingRecords: existingRecords,
             minDuration: minDuration,
+            maxDuration: maxDuration,
             windowStart: windowStart,
             windowEnd: windowEnd
         )
+    }
+
+    private static func isLikelyDuplicate(existing: SleepRecord, candidateStart: Date, candidateEnd: Date) -> Bool {
+        let existingStart = existing.sleepStart
+        let existingEnd = existing.sleepEnd
+
+        guard existingEnd > existingStart else { return false }
+
+        let startDelta = abs(existingStart.timeIntervalSince(candidateStart))
+        let endDelta = abs(existingEnd.timeIntervalSince(candidateEnd))
+        if startDelta <= duplicateTolerance && endDelta <= duplicateTolerance {
+            return true
+        }
+
+        let overlapStart = max(existingStart, candidateStart)
+        let overlapEnd = min(existingEnd, candidateEnd)
+        let overlap: TimeInterval = overlapEnd.timeIntervalSince(overlapStart)
+        guard overlap > 0 else { return false }
+
+        let existingDuration: TimeInterval = existingEnd.timeIntervalSince(existingStart)
+        let candidateDuration: TimeInterval = candidateEnd.timeIntervalSince(candidateStart)
+        let shorterDuration: TimeInterval = min(existingDuration, candidateDuration)
+        guard shorterDuration > 0 else { return false }
+
+        return overlap / shorterDuration >= 0.7
     }
 
     private static func isInSleepWindow(date: Date, windowStart: Int, windowEnd: Int) -> Bool {
@@ -68,5 +114,9 @@ struct SleepDetectionService {
         } else {
             return hour >= windowStart && hour < windowEnd
         }
+    }
+
+    private static func normalizedHour(_ hour: Int) -> Int {
+        ((hour % 24) + 24) % 24
     }
 }

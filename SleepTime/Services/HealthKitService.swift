@@ -21,6 +21,7 @@ final class HealthKitService {
 
     func saveSleepRecord(_ record: SleepRecord) async throws {
         guard isAvailable else { return }
+        guard record.sleepEnd > record.sleepStart else { return }
 
         let sample = HKCategorySample(
             type: sleepType,
